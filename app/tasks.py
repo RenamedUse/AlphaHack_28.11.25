@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .database import SessionLocal
 from . import models
 from .utils import canonicalize_features, compute_features_hash
-from .ml.model import MockIncomeModel
+from .ml.model import IncomeModel
 
 
 async def compute_recommendations(
@@ -203,15 +203,19 @@ async def process_import_job(job_id: int) -> None:
             job.total_rows = None
         await db.commit()
 
-        model = MockIncomeModel()
+        model = IncomeModel()
 
         try:
             with open(file_path, "r", encoding="utf-8") as csvfile:
-                reader = csv.DictReader(csvfile)
+                reader = csv.DictReader(csvfile, delimiter=";")
 
                 async for row in _iterate_dict_reader(reader):
                     # Идентификатор клиента берём из external_id или client_id
-                    external_id = row.pop("external_id", None) or row.pop("client_id", None)
+                    external_id = (
+                        row.pop("external_id", None)
+                        or row.pop("client_id", None)
+                        or row.pop("id", None)   # <-- забираем id и не пускаем его в features
+                    )
                     if not external_id:
                         job.processed_rows = (job.processed_rows or 0) + 1
                         await db.commit()

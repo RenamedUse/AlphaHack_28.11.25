@@ -29,7 +29,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.ml.model import MockIncomeModel
+from app.ml.model import IncomeModel
 
 from ..database import get_db
 from .. import models, schemas
@@ -215,7 +215,7 @@ async def get_client_card(
 
     # Если объяснения нет (например, лог ещё пустой) — считаем его на лету
     if not explanation_json:
-        model = MockIncomeModel()
+        model = IncomeModel()
         _, explanation_json, text_explanation = await model.predict(state.features)
 
     explanation_json = explanation_json or {}
@@ -312,7 +312,7 @@ async def simulate(
     features = canonicalize_features(features)
 
     # Прогоняем через модель
-    model = MockIncomeModel()
+    model = IncomeModel()
     income_pred, explanation_json, text_explanation = await model.predict(features)
     income_pred = float(income_pred)
     explanation_json = explanation_json or {}

@@ -1,77 +1,132 @@
-"""Мок-реализация модели прогноза дохода
-
-Модуль содержит простую детерминированную модель для демонстрационных целей
-Она выдаёт синтетический прогноз дохода на основе числовых признаков и
-возвращает SHAP-подобное объяснение вклада признаков
-
-В боевой системе эту реализацию нужно заменить на настоящую модель,
-загружаемую с диска или вызываемую через отдельный микросервис
-"""
-
 from __future__ import annotations
 
-from typing import Dict, Any, Tuple
+import os
+from pathlib import Path
+from functools import lru_cache
+from typing import Dict, Any, Tuple, List
+
+import numpy as np
+import joblib
+import pickle
+import shap
+import lightgbm as lgb
+import xgboost as xgb
+
+# Пути к файлам модели и препроцессора; можно переопределить через env
+MODEL_DIR = Path(__file__).parent
+MODEL_PATH = MODEL_DIR / "income_prediction_model.pkl"
+PREPROCESSOR_PATH = MODEL_DIR / "preprocessor.pkl"
+
+@lru_cache(maxsize=1)
+def _load_model_and_preprocessor() -> Tuple[Any, List[str]]:
+    """Ленивая загрузка модели и списка фичей."""
+    if not MODEL_PATH.exists():
+        raise RuntimeError(f"Model file not found: {MODEL_PATH}")
+    if not PREPROCESSOR_PATH.exists():
+        raise RuntimeError(f"Preprocessor file not found: {PREPROCESSOR_PATH}")
+
+    model = joblib.load(MODEL_PATH)
+
+    with PREPROCESSOR_PATH.open("rb") as f:
+        prep = pickle.load(f)
+
+    # В preprocessor.pkl должен быть ключ 'features': список исходных колонок
+    feature_names: List[str] = prep.get("features") or []
+    if not feature_names:
+        raise RuntimeError("preprocessor.pkl does not contain 'features' key")
+
+    return model, feature_names
 
 
-class MockIncomeModel:
-    """Простая детерминированная модель оценки дохода по признакам
+@lru_cache(maxsize=1)
+def _build_explainer():
+    """Создаёт SHAP TreeExplainer с нулевым background."""
+    model, feature_names = _load_model_and_preprocessor()
+    background = np.zeros((1, len(feature_names)), dtype=float)
+    explainer = shap.TreeExplainer(model, background)
 
-    Модель специально сделана простой: она считает базовый доход и добавляет
-    вклад от числовых признаков. Также возвращается SHAP-подобное объяснение
-    с топовыми признаками
-    """
+    expected_value = explainer.expected_value
+    # expected_value может быть скаляром или массивом
+    if isinstance(expected_value, (np.ndarray, list)):
+        expected_value = float(np.array(expected_value).ravel()[0])
+    else:
+        expected_value = float(expected_value)
 
-    def __init__(self, baseline: float = 50_000.0) -> None:
-        self.baseline = baseline
+    return explainer, expected_value
+
+
+class IncomeModel:
+    """Продовая модель прогноза дохода с SHAP‑объяснениями."""
 
     async def predict(self, features: Dict[str, Any]) -> Tuple[float, Dict[str, Any], str]:
-        """Посчитать прогноз дохода по словарю признаков
-
-        :param features: Нормализованный словарь признаков
-        :return: Кортеж (income_pred, explanation_json, text_explanation)
         """
-        contributions: Dict[str, Dict[str, Any]] = {}
-        income_pred = self.baseline
+        :param features: нормализованный словарь признаков (после canonicalize_features)
+        :return: (income_pred, explanation_json, text_explanation)
+        """
+        model, feature_names = _load_model_and_preprocessor()
 
-        # Простое правило: числовые признаки вносят пропорциональный вклад
-        for key, value in features.items():
-            shap_value = 0.0
-            if isinstance(value, (int, float)):
-                # Вклад масштабируется по числовому значению
-                shap_value = float(value) * 100.0
-            elif isinstance(value, str):
-                # Для категориальных признаков даём небольшой фиксированный вклад
-                shap_value = 500.0
+        # Собираем вектор признаков в нужном порядке
+        raw_for_report: Dict[str, Any] = {}
+        row_values: List[float] = []
+        for name in feature_names:
+            raw_val = features.get(name)
+            raw_for_report[name] = raw_val
+            if raw_val is None or raw_val == "":
+                row_values.append(-999.0)  # аналогично препроцессору
+                continue
+            try:
+                row_values.append(float(raw_val))
+            except Exception:
+                # строку приводим к детерминированному числу через хеш
+                row_values.append(float(abs(hash(str(raw_val))) % 1000))
 
-            income_pred += shap_value
-            contributions[key] = {"value": value, "shap_value": shap_value}
+        X_row = np.array(row_values, dtype=float).reshape(1, -1)
 
-        # Формируем структуру объяснения
-        # Сортируем признаки по модулю вклада и берём топ-10
-        top_items = sorted(
-            contributions.items(),
-            key=lambda item: abs(item[1]["shap_value"]),
-            reverse=True,
-        )[:10]
+        # Предсказываем в зависимости от типа модели
+        if isinstance(model, xgb.Booster):
+            dmat = xgb.DMatrix(X_row, feature_names=feature_names)
+            pred = float(model.predict(dmat)[0])
+        elif isinstance(model, lgb.Booster):
+            pred = float(model.predict(X_row)[0])
+        else:
+            pred = float(model.predict(X_row)[0])
 
-        top_features = []
-        for feature_name, info in top_items:
-            top_features.append(
+        # SHAP‑значения
+        try:
+            explainer, expected_value = _build_explainer()
+            shap_vals_raw = explainer.shap_values(X_row)
+            if isinstance(shap_vals_raw, list):
+                shap_vals_raw = shap_vals_raw[0]
+            shap_vals = np.array(shap_vals_raw)[0]
+        except Exception:
+            # Если SHAP не работает, используем нулевые значения
+            expected_value = pred
+            shap_vals = np.zeros(len(feature_names))
+
+        contrib_items = []
+        for name, shap_val, model_val in zip(feature_names, shap_vals, row_values):
+            contrib_items.append(
                 {
-                    "feature": feature_name,
-                    "title": feature_name,  # В реальности здесь можно подставить человекочитаемый заголовок
-                    "value": info["value"],
-                    "shap_value": info["shap_value"],
+                    "feature": name,
+                    "title": name,
+                    "value": raw_for_report.get(name, model_val),
+                    "model_value": model_val,
+                    "shap_value": float(shap_val),
                 }
             )
 
+        top_features = sorted(
+            contrib_items,
+            key=lambda it: abs(it["shap_value"]),
+            reverse=True,
+        )[:10]
+
         explanation_json: Dict[str, Any] = {
-            "baseline_income": self.baseline,
-            "prediction": income_pred,
+            "baseline_income": expected_value,
+            "prediction": pred,
             "top_features": top_features,
         }
 
-        # Строим текстовое объяснение
         if top_features:
             parts = []
             for item in top_features[:3]:
@@ -81,13 +136,13 @@ class MockIncomeModel:
                 sign = "+" if shap_val >= 0 else "-"
                 parts.append(f"{feat} ({val}) {sign}{abs(shap_val):,.0f} ₽")
             text_explanation = (
-                f"Модель оценила доход в {income_pred:,.0f} ₽. Наибольший вклад дали: "
-                + ", ".join(parts)
-                + "."
+                f"Модель оценила доход в {pred:,.0f} ₽. "
+                f"Наибольший вклад дали: {', '.join(parts)}."
             )
         else:
             text_explanation = (
-                f"Модель оценила доход в {income_pred:,.0f} ₽. Вклад признаков равномерный."
+                f"Модель оценила доход в {pred:,.0f} ₽. "
+                "Вклад признаков распределён равномерно."
             )
 
-        return income_pred, explanation_json, text_explanation
+        return pred, explanation_json, text_explanation

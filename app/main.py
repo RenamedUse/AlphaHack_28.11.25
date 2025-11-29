@@ -9,11 +9,20 @@ from __future__ import annotations
 import os
 
 from fastapi import FastAPI
-
+from fastapi.middleware.cors import CORSMiddleware
 from .database import create_tables
 
 app = FastAPI(title="TunTunDohod", version="0.1.0")
 
+ALLOWED_ORIGINS = ['*']
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],   # если нужно ограничить: ["GET", "POST", ...]
+    allow_headers=["*"],
+)
 
 @app.on_event("startup")
 async def on_startup() -> None:
