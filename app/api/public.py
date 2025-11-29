@@ -14,9 +14,8 @@ import os
 import uuid
 import shutil
 import datetime
-from typing import List, Optional, Dict, Any
-
 import asyncio
+from typing import List, Optional, Dict, Any
 
 from fastapi import (
     APIRouter,
@@ -76,16 +75,8 @@ async def import_income_csv(
     await db.flush()
     await db.commit()
 
-    # Wrap async function to run in background
-    def run_async_task():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(process_import_job(job.id))
-        finally:
-            loop.close()
-
-    background_tasks.add_task(run_async_task)
+    # Schedule the async task using asyncio.create_task which preserves the event loop
+    asyncio.create_task(process_import_job(job.id))
 
     return schemas.ImportJobResponse.model_validate(job)
 

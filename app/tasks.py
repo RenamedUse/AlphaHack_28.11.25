@@ -183,127 +183,120 @@ async def process_import_job(job_id: int) -> None:
     6. Обновляем счётчик обработанных строк
     7. По завершении помечаем задачу как ``completed`` или ``failed``
     """
-    # Run in a new event loop context to avoid greenlet issues
-    try:
-        async with SessionLocal() as db:
-            # Загружаем задачу
-            job = await db.get(models.ImportJob, job_id)
-            if not job:
-                return
+    async with SessionLocal() as db:
+        # Загружаем задачу
+        job = await db.get(models.ImportJob, job_id)
+        if not job:
+            return
 
-            # Обновляем статус на "running"
-            job.status = "running"
-            job.processed_rows = 0
-            await db.commit()
+        # Обновляем статус на "running"
+        job.status = "running"
+        job.processed_rows = 0
+        await db.commit()
 
-            file_path = job.file_path
+        file_path = job.file_path
 
-            # Пытаемся посчитать количество строк (для отображения прогресса)
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    job.total_rows = sum(1 for _ in f) - 1
-            except Exception:
-                job.total_rows = None
-            await db.commit()
+        # Пытаемся посчитать количество строк (для отображения прогресса)
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                job.total_rows = sum(1 for _ in f) - 1
+        except Exception:
+            job.total_rows = None
+        await db.commit()
 
-            model = IncomeModel()
+        model = IncomeModel()
 
-            try:
-                # Read all rows synchronously first, outside of async context
-                rows = []
-                with open(file_path, "r", encoding="utf-8") as csvfile:
-                    reader = csv.DictReader(csvfile, delimiter=";")
-                    rows = list(reader)
+        try:
+            # Read all rows synchronously first, outside of async context
+            rows = []
+            with open(file_path, "r", encoding="utf-8") as csvfile:
+                reader = csv.DictReader(csvfile, delimiter=";")
+                rows = list(reader)
 
-                # Now process rows asynchronously
-                for row in rows:
-                    # Идентификатор клиента берём из external_id или client_id
-                    external_id = (
-                        row.pop("external_id", None)
-                        or row.pop("client_id", None)
-                        or row.pop("id", None)   # <-- забираем id и не пускаем его в features
-                    )
-                    if not external_id:
-                        job.processed_rows = (job.processed_rows or 0) + 1
-                        await db.commit()
-                        continue
-
-                    # Нормализуем признаки
-                    features_raw = {k: v for k, v in row.items() if k}
-                    features = canonicalize_features(features_raw)
-                    features_hash = compute_features_hash(features)
-
-                    # Получаем или создаём клиента
-                    client = await _get_or_create_client(db, external_id)
-
-                    # Текущее состояние клиента
-                    state = client.state
-                    state_changed = True
-                    if state and state.features_hash == features_hash:
-                        # Признаки не изменились — можно пропустить перерасчёт
-                        state_changed = False
-
-                    if state_changed:
-                        # Считаем предсказание и объяснение
-                        income_pred, explanation_json, text_explanation = await model.predict(
-                            features
-                        )
-
-                        # Считаем рекомендации (снимок на момент импорта, по желанию)
-                        recs = await compute_recommendations(db, float(income_pred), features)
-
-                        # Пишем лог предсказания
-                        pred_log = models.PredictionLog(
-                            client_id=client.id,
-                            is_simulation=False,
-                            features=features,
-                            income_pred=income_pred,
-                            explanation_json=explanation_json,
-                            text_explanation=text_explanation,
-                            recommendations=recs,
-                            model_version="v1",
-                            request_source="csv_import",
-                        )
-                        db.add(pred_log)
-
-                        # Обновляем/создаём актуальное состояние клиента
-                        if state is None:
-                            new_state = models.ClientState(
-                                client_id=client.id,
-                                features=features,
-                                features_hash=features_hash,
-                                income_pred=income_pred,
-                                model_version="v1",
-                            )
-                            db.add(new_state)
-                        else:
-                            state.features = features
-                            state.features_hash = features_hash
-                            state.income_pred = income_pred
-                            state.model_version = "v1"
-                            state.updated_at = datetime.datetime.now(datetime.UTC)
-
-                        await db.flush()
-
-                    # Обновляем прогресс
+            # Now process rows asynchronously
+            for row in rows:
+                # Идентификатор клиента берём из external_id или client_id
+                external_id = (
+                    row.pop("external_id", None)
+                    or row.pop("client_id", None)
+                    or row.pop("id", None)   # <-- забираем id и не пускаем его в features
+                )
+                if not external_id:
                     job.processed_rows = (job.processed_rows or 0) + 1
                     await db.commit()
+                    continue
 
-            except Exception as exc:
-                # Любая ошибка — фиксируем текст ошибки и статус failed
-                job.status = "failed"
-                job.error = str(exc)
+                # Нормализуем признаки
+                features_raw = {k: v for k, v in row.items() if k}
+                features = canonicalize_features(features_raw)
+                features_hash = compute_features_hash(features)
+
+                # Получаем или создаём клиента
+                client = await _get_or_create_client(db, external_id)
+
+                # Текущее состояние клиента
+                state = client.state
+                state_changed = True
+                if state and state.features_hash == features_hash:
+                    # Признаки не изменились — можно пропустить перерасчёт
+                    state_changed = False
+
+                if state_changed:
+                    # Считаем предсказание и объяснение
+                    income_pred, explanation_json, text_explanation = await model.predict(
+                        features
+                    )
+
+                    # Считаем рекомендации (снимок на момент импорта, по желанию)
+                    recs = await compute_recommendations(db, float(income_pred), features)
+
+                    # Пишем лог предсказания
+                    pred_log = models.PredictionLog(
+                        client_id=client.id,
+                        is_simulation=False,
+                        features=features,
+                        income_pred=income_pred,
+                        explanation_json=explanation_json,
+                        text_explanation=text_explanation,
+                        recommendations=recs,
+                        model_version="v1",
+                        request_source="csv_import",
+                    )
+                    db.add(pred_log)
+
+                    # Обновляем/создаём актуальное состояние клиента
+                    if state is None:
+                        new_state = models.ClientState(
+                            client_id=client.id,
+                            features=features,
+                            features_hash=features_hash,
+                            income_pred=income_pred,
+                            model_version="v1",
+                        )
+                        db.add(new_state)
+                    else:
+                        state.features = features
+                        state.features_hash = features_hash
+                        state.income_pred = income_pred
+                        state.model_version = "v1"
+                        state.updated_at = datetime.datetime.now(datetime.UTC)
+
+                    await db.flush()
+
+                # Обновляем прогресс
+                job.processed_rows = (job.processed_rows or 0) + 1
                 await db.commit()
-            else:
-                # Успешное завершение
-                job.status = "completed"
-                job.finished_at = datetime.datetime.now(datetime.UTC)
-                await db.commit()
-    except Exception as exc:
-        # Outer exception handler to catch session creation errors
-        print(f"Fatal error in process_import_job: {exc}")
-        import traceback
-        traceback.print_exc()
+
+        except Exception as exc:
+            # Любая ошибка — фиксируем текст ошибки и статус failed
+            job.status = "failed"
+            job.error = str(exc)
+            await db.commit()
+        else:
+            # Успешное завершение
+            job.status = "completed"
+            job.finished_at = datetime.datetime.now(datetime.UTC)
+            await db.commit()
 
 
 async def _get_or_create_client(db: AsyncSession, external_id: str) -> models.Client:
