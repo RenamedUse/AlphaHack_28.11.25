@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import datetime
+from http import client
 from typing import Dict, Any, List
 
 from sqlalchemy import select
@@ -235,6 +236,9 @@ async def process_import_job(job_id: int) -> None:
                 client = await _get_or_create_client(db, external_id)
 
                 # Текущее состояние клиента
+                client = await _get_or_create_client(db, external_id)
+
+                await db.refresh(client, attribute_names=["state"])
                 state = client.state
                 state_changed = True
                 if state and state.features_hash == features_hash:
