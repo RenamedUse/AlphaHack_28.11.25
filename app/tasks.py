@@ -13,16 +13,15 @@ from __future__ import annotations
 import asyncio
 import csv
 import datetime
-from http import client
 from typing import Dict, Any, List
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload  # может не использоваться, но полезен
 
 from .database import SessionLocal
 from . import models
-from .utils import canonicalize_features, compute_features_hash
+from .utils import canonicalize_features, compute_features_hash, sanitize_for_json
 from .ml.model import IncomeModel
 
 
@@ -166,11 +165,12 @@ async def compute_recommendations(
                 }
             )
 
-    return recommendations
+    # На всякий случай прогоняем через санитайзер перед сохранением в JSONB
+    return sanitize_for_json(recommendations)  # type: ignore[return-value]
 
 
 async def process_import_job(job_id: int) -> None:
-    """Обработать задачу импорта CSV в фоне
+    """Обработать задачу импорта CSV в фоне.
 
     Шаги:
     1. Загружаем запись ImportJob по ID
@@ -209,7 +209,6 @@ async def process_import_job(job_id: int) -> None:
 
         try:
             # Read all rows synchronously first, outside of async context
-            rows = []
             with open(file_path, "r", encoding="utf-8") as csvfile:
                 reader = csv.DictReader(csvfile, delimiter=";")
                 rows = list(reader)
@@ -220,7 +219,7 @@ async def process_import_job(job_id: int) -> None:
                 external_id = (
                     row.pop("external_id", None)
                     or row.pop("client_id", None)
-                    or row.pop("id", None)   # <-- забираем id и не пускаем его в features
+                    or row.pop("id", None)  # <-- забираем id и не пускаем его в features
                 )
                 if not external_id:
                     job.processed_rows = (job.processed_rows or 0) + 1
@@ -230,16 +229,20 @@ async def process_import_job(job_id: int) -> None:
                 # Нормализуем признаки
                 features_raw = {k: v for k, v in row.items() if k}
                 features = canonicalize_features(features_raw)
+
+                # Чистим NaN/Inf, чтобы Postgres принял JSONB
+                features = sanitize_for_json(features)  # type: ignore[assignment]
+
+                # Хэш считаем уже по очищенным признакам
                 features_hash = compute_features_hash(features)
 
                 # Получаем или создаём клиента
                 client = await _get_or_create_client(db, external_id)
 
-                # Текущее состояние клиента
-                client = await _get_or_create_client(db, external_id)
-
+                # Явно подгружаем state, чтобы не было lazy-load в async-сессии
                 await db.refresh(client, attribute_names=["state"])
                 state = client.state
+
                 state_changed = True
                 if state and state.features_hash == features_hash:
                     # Признаки не изменились — можно пропустить перерасчёт
@@ -251,8 +254,13 @@ async def process_import_job(job_id: int) -> None:
                         features
                     )
 
+                    # Чистим explanation_json от NaN/Inf
+                    explanation_json = sanitize_for_json(explanation_json)
+
                     # Считаем рекомендации (снимок на момент импорта, по желанию)
-                    recs = await compute_recommendations(db, float(income_pred), features)
+                    recs = await compute_recommendations(
+                        db, float(income_pred), features
+                    )
 
                     # Пишем лог предсказания
                     pred_log = models.PredictionLog(
@@ -292,9 +300,14 @@ async def process_import_job(job_id: int) -> None:
                 await db.commit()
 
         except Exception as exc:
-            # Любая ошибка — фиксируем текст ошибки и статус failed
+            # Откатываем текущую транзакцию, т.к. flush/commit уже могли упасть
+            await db.rollback()
+
+            # Фиксируем текст ошибки и статус failed
             job.status = "failed"
             job.error = str(exc)
+
+            # Сохраняем статус задачи уже в новой транзакции
             await db.commit()
         else:
             # Успешное завершение
@@ -304,7 +317,7 @@ async def process_import_job(job_id: int) -> None:
 
 
 async def _get_or_create_client(db: AsyncSession, external_id: str) -> models.Client:
-    """Получить клиента по external_id или создать нового
+    """Получить клиента по external_id или создать нового.
 
     :param db: Активная сессия БД
     :param external_id: Внешний идентификатор клиента из CSV/API
