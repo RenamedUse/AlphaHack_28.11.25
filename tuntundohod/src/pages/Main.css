@@ -1,0 +1,285 @@
+.main-page {
+  padding: 40px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background-color: #fff;
+  color: #202022;
+}
+
+/* Хедер */
+.header {
+  display: flex;
+  align-items: center;
+}
+
+.search-input {
+  flex: 1;
+  width: 25%;
+  /* max-width: 400px; */
+  padding: 12px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  background-color: #f2f3f5;
+  border: none;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #007bff;
+}
+
+.upload-btn {
+  padding: 12px 24px;
+  background: #ef3124;
+  color: #fef3f2;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  font-weight: 500;
+  margin-left: 20px;
+}
+
+.monitoring-btn {
+  padding: 12px 24px;
+  background: #ef3124;
+  color: #fef3f2;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.upload-btn:hover {
+  background: #d82d20;
+}
+
+.monitoring-btn:hover {
+  background: #d82d20;
+}
+
+/* Контейнер с двумя колонками */
+.content-container {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  min-height: 0; /* Важно для правильного скролла */
+}
+
+/* Левая колонка - список пользователей (25%) */
+.user-list {
+  width: 25%;
+  background: #f2f3f5;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.user-list-header {
+  padding: 20px;
+  border-bottom: 1px solid #e1e5e9;
+}
+
+.user-list-header h3 {
+  margin: 0;
+  color: #2c3e50;
+}
+
+.users-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.user-item {
+  padding: 16px;
+  border-radius: 20px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background-color: #dbdde2;
+}
+
+.user-item:hover {
+  background-color: #bfc0c5;
+}
+
+.user-item.active {
+  background: #212124;
+  color: #f2f2f2;
+}
+
+.user-name {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+}
+
+.user-details {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* Правая колонка - основная информация (75%) */
+.main-info {
+  width: 75%;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-info-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  overflow-y: auto;
+  padding: 20px;
+  background-color: #f2f3f5;
+  border-radius: 20px;
+}
+
+/* Базовые стили для карточек */
+.main-info-card {
+  background: white;
+  border-radius: 20px;
+  padding: 20px;
+}
+
+/* Карточка на 2 колонки */
+.card-w {
+  grid-column: span 2;
+}
+
+/* Карточка на 3 колонки */
+.card-uw {
+  grid-column: span 3;
+}
+
+/* Заголовок карточки */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e1e5e9;
+}
+
+.card-header h3,
+.card-header h4 {
+  margin: 0;
+}
+
+.card-header h3 {
+  font-size: 18px;
+}
+
+.card-header h4 {
+  font-size: 16px;
+}
+
+/* Секция дохода */
+.income-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.income-amount {
+  font-size: 24px;
+  font-weight: bold;
+  color: #2e7d32;
+}
+
+.income-segment {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.income-segment.high {
+  background: #e8f5e8;
+  color: #2e7d32;
+}
+
+/* Мета-информация клиента */
+.client-meta p {
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+/* Список фич */
+.features-list {
+  margin-top: 12px;
+}
+
+.feature-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.feature-item:last-child {
+  border-bottom: none;
+}
+
+.feature-impact {
+  font-weight: bold;
+  color: #2e7d32;
+}
+
+/* Продукты */
+.product-item {
+  padding: 12px 0;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.product-item:last-child {
+  border-bottom: none;
+}
+
+.product-item strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.product-item p {
+  margin: 0;
+  font-size: 14px;
+  color: #6c757d;
+}
+
+/* Стили для скроллбаров */
+.users-container::-webkit-scrollbar,
+.main-info-grid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.users-container::-webkit-scrollbar-track,
+.main-info-grid::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.users-container::-webkit-scrollbar-thumb,
+.main-info-grid::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.users-container::-webkit-scrollbar-thumb:hover,
+.main-info-grid::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.buttons-container {
+    display: flex;
+    justify-content: space-between;
+    width: 75%;
+}
