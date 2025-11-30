@@ -206,3 +206,6 @@ CatBoost / LightGBM / NN Keras
 FastAPI для сервера
 SHAP для анализа признаков
 Pandas / NumPy для обработки данных
+
+## 14. Для теста можно загрузить csv на сайт по ссылке
+https://drive.google.com/file/d/1FCU93n4xFjt_B7nw6LrmKuWZwFbutagD/view?usp=sharing
