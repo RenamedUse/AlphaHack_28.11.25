@@ -14,7 +14,7 @@ import xgboost as xgb
 
 # Пути к файлам модели и препроцессора; можно переопределить через env
 MODEL_DIR = Path(__file__).parent
-MODEL_PATH = MODEL_DIR / "income_prediction.pkl"
+MODEL_PATH = MODEL_DIR / "income_model.pkl"
 PREPROCESSOR_PATH = MODEL_DIR / "income_preprocessor.pkl"
 
 @lru_cache(maxsize=1)
