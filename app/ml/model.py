@@ -17,7 +17,7 @@ import xgboost as xgb
 MODEL_DIR = Path(__file__).parent
 
 _default_model_path = MODEL_DIR / "income_model.pkl"
-_default_preproc_path = MODEL_DIR / "income_preprocessor.pkl"
+_default_preproc_path = MODEL_DIR / "preprocessor.pkl"
 
 # Пути можно переопределить через переменные окружения, если нужно
 MODEL_PATH = Path(os.getenv("INCOME_MODEL_PATH", str(_default_model_path)))
