@@ -38,6 +38,8 @@ async def on_startup() -> None:
 # Подключаем роутеры
 from .api.public import router as public_router
 from .api.admin import router as admin_router
+from .api.model_health import router as monitoring_router
 
 app.include_router(public_router)
 app.include_router(admin_router)
+app.include_router(monitoring_router)
