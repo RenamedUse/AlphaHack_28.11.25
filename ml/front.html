@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Income Prediction</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        h1 {
+            text-align: center;
+            color: #c00; /* Red from Alfa-Bank style */
+        }
+        #upload-form {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        #file-input {
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fff;
+        }
+        #submit-btn {
+            padding: 10px 20px;
+            background-color: #c00; /* Red button */
+            color: white;
+            border: none;
+            border-radius: 5px; /* Rounded corners */
+            cursor: pointer;
+            font-size: 16px;
+        }
+        #submit-btn:hover {
+            background-color: #a00;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 10px; /* Rounded */
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #personal-info, #prediction, #shap-explanation, #feature-shap-explanation {
+            margin-bottom: 20px;
+        }
+        #shap-chart, #feature-shap-chart {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        #error {
+            color: #c00;
+            margin-top: 10px;
+            text-align: center;
+        }
+        #loading {
+            display: none;
+            margin-top: 10px;
+            color: #c00;
+            text-align: center;
+        }
+        .section-title {
+            font-weight: bold;
+            color: #c00;
+            margin-bottom: 10px;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Income Prediction</h1>
+    <p style="text-align: center;">Upload a JSON file with client data to predict income and view insights.</p>
+    
+    <div id="upload-form">
+        <input type="file" id="file-input" accept=".json">
+        <button id="submit-btn">Predict Income</button>
+    </div>
+    
+    <div id="loading">Loading... Please wait.</div>
+    <div id="result"></div>
+    <div id="error"></div>
+
+    <script>
+        const submitBtn = document.getElementById('submit-btn');
+        const fileInput = document.getElementById('file-input');
+        const resultDiv = document.getElementById('result');
+        const errorDiv = document.getElementById('error');
+        const loadingDiv = document.getElementById('loading');
+
+        submitBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                errorDiv.textContent = 'Please select a JSON file.';
+                return;
+            }
+
+            if (!file.name.endsWith('.json')) {
+                errorDiv.textContent = 'Please upload a valid JSON file.';
+                return;
+            }
+
+            try {
+                loadingDiv.style.display = 'block';
+                errorDiv.textContent = '';
+                resultDiv.innerHTML = '';
+
+                // Read the file
+                const fileContent = await file.text();
+                const jsonData = JSON.parse(fileContent);
+
+                // Extract personal info from JSON
+                const id = jsonData.id || 'N/A';
+                const age = jsonData.age || 'N/A';
+                const gender = jsonData.gender || 'N/A';
+                const location = jsonData.city_smart_name || jsonData.adminarea || 'N/A';
+
+                // Send POST to /predict_income
+                const predictResponse = await fetch('http://127.0.0.1:8000/predict_income', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(jsonData),
+                });
+
+                if (!predictResponse.ok) {
+                    const errorData = await predictResponse.json();
+                    throw new Error(errorData.detail || 'Prediction failed');
+                }
+
+                const predictData = await predictResponse.json();
+
+                // Send POST to /explain_income
+                const explainResponse = await fetch('http://127.0.0.1:8000/explain_income', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(jsonData),
+                });
+
+                if (!explainResponse.ok) {
+                    const errorData = await explainResponse.json();
+                    throw new Error(errorData.detail || 'Explanation failed');
+                }
+
+                const explainData = await explainResponse.json();
+
+                // Build HTML
+                let html = `
+                    <div id="personal-info">
+                        <div class="section-title">Personal Information</div>
+                        <ul>
+                            <li><strong>ID:</strong> ${id}</li>
+                            <li><strong>Age:</strong> ${age}</li>
+                            <li><strong>Gender:</strong> ${gender}</li>
+                            <li><strong>Location:</strong> ${location}</li>
+                        </ul>
+                    </div>
+                    <div id="prediction">
+                        <div class="section-title">Prediction</div>
+                        <p><strong>Predicted Income:</strong> ${predictData.predicted_income.toFixed(2)}</p>
+                        <p><strong>Model Version:</strong> ${predictData.model_version}</p>
+                    </div>
+                    <div id="shap-explanation">
+                        <div class="section-title">SHAP Explanation (Model Contributions)</div>
+                        <p><strong>Base Value:</strong> ${explainData.shap_explanation.base_value.toFixed(2)}</p>
+                        <ul>
+                            ${explainData.shap_explanation.feature_names.map((name, index) => `
+                                <li><strong>${name}:</strong> ${explainData.shap_explanation.shap_values[index].toFixed(2)}</li>
+                            `).join('')}
+                        </ul>
+                        <canvas id="shap-chart" width="600" height="300"></canvas>
+                    </div>
+                `;
+
+                if (explainData.feature_shap) {
+                    html += `
+                        <div id="feature-shap-explanation">
+                            <div class="section-title">Feature SHAP Explanation (Key Metrics Influence)</div>
+                            <ul>
+                                ${explainData.feature_shap.feature_names.map((name, index) => `
+                                    <li><strong>${name}:</strong> ${explainData.feature_shap.shap_values[index].toFixed(2)}</li>
+                                `).join('')}
+                            </ul>
+                            <canvas id="feature-shap-chart" width="600" height="400"></canvas>
+                        </div>
+                    `;
+                }
+
+                resultDiv.innerHTML = html;
+
+                // Create bar chart for meta SHAP values
+                const ctx = document.getElementById('shap-chart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: explainData.shap_explanation.feature_names,
+                        datasets: [{
+                            label: 'SHAP Value',
+                            data: explainData.shap_explanation.shap_values,
+                            backgroundColor: '#c00', // Red bars
+                            borderColor: '#a00',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                });
+
+                // If feature_shap exists, create the chart
+                if (explainData.feature_shap) {
+                    const featureCtx = document.getElementById('feature-shap-chart').getContext('2d');
+                    new Chart(featureCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: explainData.feature_shap.feature_names,
+                            datasets: [{
+                                label: 'SHAP Value',
+                                data: explainData.feature_shap.shap_values,
+                                backgroundColor: '#c00', // Red bars
+                                borderColor: '#a00',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            indexAxis: 'y', // Horizontal bar for long feature names
+                            scales: {
+                                x: {
+                                    beginAtZero: true
+                                }
+                            },
+                            plugins: {
+                                legend: {
+                                    display: false
+                                }
+                            }
+                        }
+                    });
+                }
+
+            } catch (error) {
+                errorDiv.textContent = `Error: ${error.message}`;
+            } finally {
+                loadingDiv.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
