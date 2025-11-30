@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import csv
-import os
+import logging
 from pathlib import Path
-import datetime
 from typing import Optional, Dict, Any, List
 
 from sqlalchemy import select
@@ -11,9 +10,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import models
 
-# базовая директория пакета app
-BASE_DIR = Path(__file__).resolve().parent.parent
-FEATURES_DESCRIPTION_PATH = BASE_DIR / "data" / "features_description.csv"
+log = logging.getLogger(__name__)
+
+
+def _get_app_root() -> Path:
+    """
+    Найти корень пакета `app` (директорию, где лежат data/, ml/, database.py).
+    Работает независимо от того, где лежит этот модуль (app/api, app/services и т.п.).
+    """
+    current = Path(__file__).resolve()
+    # Идём вверх по дереву, пока не найдём директорию с именем "app"
+    for parent in [current] + list(current.parents):
+        if parent.name == "app":
+            return parent
+    # запасной вариант: директория, в которой лежит файл
+    return current.parent
+
+
+APP_ROOT = _get_app_root()
+FEATURES_DESCRIPTION_PATH = APP_ROOT / "data" / "features_description.csv"
 
 
 async def seed_segments(db: AsyncSession) -> None:
@@ -113,53 +128,70 @@ def _infer_data_type(name: str, raw_type: Optional[str]) -> str:
 
 async def seed_feature_definitions(db: AsyncSession) -> None:
     """Посеять FeatureDefinition из файла features_description.csv."""
+    log.info("[seed] features file path: %s", FEATURES_DESCRIPTION_PATH)
+
     if not FEATURES_DESCRIPTION_PATH.exists():
-        # Ничего страшного: просто не сидируем признаки
-        print(f"[seed] features file not found: {FEATURES_DESCRIPTION_PATH}")
+        log.warning("[seed] features file NOT FOUND, пропускаю сид признаков")
         return
 
-    # файл из хакатона в cp1251
-    with open(FEATURES_DESCRIPTION_PATH, "r", encoding="cp1251", newline="") as f:
-        sample = f.read(4096)
-        f.seek(0)
-        try:
-            dialect = csv.Sniffer().sniff(sample, delimiters=";,")
-        except csv.Error:
-            dialect = csv.excel
+    inserted = 0
 
-        reader = csv.DictReader(f, dialect=dialect)
-        if not reader.fieldnames:
-            return
+    try:
+        # оригинальный файл из хакатона в cp1251
+        with FEATURES_DESCRIPTION_PATH.open("r", encoding="cp1251", newline="") as f:
+            sample = f.read(4096)
+            f.seek(0)
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=";,")
+            except csv.Error:
+                dialect = csv.excel
 
-        cols = _detect_feature_columns(reader.fieldnames)
+            reader = csv.DictReader(f, dialect=dialect)
+            if not reader.fieldnames:
+                log.warning("[seed] features file has no header")
+                return
 
-        for row in reader:
-            name = (row.get(cols["name"]) or "").strip()
-            if not name:
-                continue
-
-            existing = await db.execute(
-                select(models.FeatureDefinition).where(
-                    models.FeatureDefinition.name == name
+            cols = _detect_feature_columns(reader.fieldnames)
+            if not cols["name"]:
+                log.warning(
+                    "[seed] cannot detect feature name column. fieldnames=%s",
+                    reader.fieldnames,
                 )
-            )
-            if existing.scalars().first():
-                continue
+                return
 
-            title = (row.get(cols["title"]) or name).strip()
-            description = (row.get(cols["description"]) or "").strip() or None
-            raw_type = row.get(cols["dtype"]) if cols["dtype"] else None
-            data_type = _infer_data_type(name, raw_type)
+            for row in reader:
+                name = (row.get(cols["name"]) or "").strip()
+                if not name:
+                    continue
 
-            feat = models.FeatureDefinition(
-                name=name,
-                title=title,
-                description=description,
-                data_type=data_type,
-            )
-            db.add(feat)
+                existing = await db.execute(
+                    select(models.FeatureDefinition).where(
+                        models.FeatureDefinition.name == name
+                    )
+                )
+                if existing.scalars().first():
+                    continue
 
-    await db.commit()
+                title = (row.get(cols["title"]) or name).strip()
+                description = (row.get(cols["description"]) or "").strip() or None
+                raw_type = row.get(cols["dtype"]) if cols["dtype"] else None
+                data_type = _infer_data_type(name, raw_type)
+
+                feat = models.FeatureDefinition(
+                    name=name,
+                    title=title,
+                    description=description,
+                    data_type=data_type,
+                )
+                db.add(feat)
+                inserted += 1
+
+        await db.commit()
+        log.info("[seed] inserted %d feature definitions", inserted)
+
+    except Exception:
+        log.exception("[seed] error while seeding feature definitions")
+        await db.rollback()
 
 
 async def _get_segment_map(db: AsyncSession) -> Dict[str, models.Segment]:
@@ -168,16 +200,45 @@ async def _get_segment_map(db: AsyncSession) -> Dict[str, models.Segment]:
     return {s.code: s for s in segs}
 
 
-async def _get_feature_by_name(db: AsyncSession, name: str) -> Optional[models.FeatureDefinition]:
+async def _get_feature_by_name(
+    db: AsyncSession,
+    name: str,
+) -> Optional[models.FeatureDefinition]:
     result = await db.execute(
         select(models.FeatureDefinition).where(models.FeatureDefinition.name == name)
     )
     return result.scalars().first()
 
 
+async def _ensure_feature(
+    db: AsyncSession,
+    name: str,
+    *,
+    data_type: str,
+    title: Optional[str] = None,
+) -> models.FeatureDefinition:
+    """
+    Гарантированно вернуть FeatureDefinition:
+    если нет в БД (CSV не сиднулся) — создать на лету.
+    """
+    feat = await _get_feature_by_name(db, name)
+    if feat:
+        return feat
+
+    feat = models.FeatureDefinition(
+        name=name,
+        title=title or name,
+        description=None,
+        data_type=data_type,
+    )
+    db.add(feat)
+    await db.flush()
+    log.info("[seed] created feature '%s' on the fly", name)
+    return feat
+
+
 async def seed_products_and_rules(db: AsyncSession) -> None:
     """Посеять банковские продукты и правила отбора клиентов."""
-
     seg_map = await _get_segment_map(db)
 
     products_def: List[Dict[str, Any]] = [
@@ -259,8 +320,13 @@ async def seed_products_and_rules(db: AsyncSession) -> None:
         for rule_def in pdata["rules"]:
             feat = await _get_feature_by_name(db, rule_def["feature"])
             if not feat:
-                # Если в features_description нет такого признака — правило просто не создаём
-                continue
+                # fallback: создаём фичу, если CSV не подгрузился
+                dt = "numeric" if rule_def["feature"] == "age" else "string"
+                feat = await _ensure_feature(
+                    db,
+                    rule_def["feature"],
+                    data_type=dt,
+                )
 
             dup_q = await db.execute(
                 select(models.ProductFeatureRule).where(
