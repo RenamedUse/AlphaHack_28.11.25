@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import os
+from pathlib import Path
 import datetime
 from typing import Optional, Dict, Any, List
 
@@ -10,10 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import models
 
-FEATURES_DESCRIPTION_PATH = os.environ.get(
-    "FEATURES_DESCRIPTION_PATH",
-    "/data/features_description.csv",
-)
+# Кроссплатформенный путь (работает на Linux и Windows)
+FEATURES_DESCRIPTION_PATH = Path(__file__).parent.parent / "data" / "features_description.csv"
 
 
 async def seed_segments(db: AsyncSession) -> None:
@@ -113,7 +112,7 @@ def _infer_data_type(name: str, raw_type: Optional[str]) -> str:
 
 async def seed_feature_definitions(db: AsyncSession) -> None:
     """Посеять FeatureDefinition из файла features_description.csv."""
-    if not os.path.exists(FEATURES_DESCRIPTION_PATH):
+    if not FEATURES_DESCRIPTION_PATH.exists():
         # Ничего страшного: просто не сидируем признаки
         return
 
