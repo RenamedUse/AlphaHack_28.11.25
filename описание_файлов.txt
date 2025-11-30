@@ -1,0 +1,58 @@
+Модели и обучение:
+train_model.py — обучение ансамбля моделей.
+income_ensemble_model.pkl — сохранённая обученная итоговая модель.
+preprocessor.pkl — сохранённый препроцессор.
+
+Инференс:
+inference.py — скрипт получения прогноза: загрузка препроцессора и модели, предикт.
+generate_json.py — генерация тестовых JSON-входов для примеров пользователей.
+user_id_2.json, user_id_4.json, user_id_46.json — примеры разных пользователей.
+
+Данные:
+hackathon_income_train.csv — тренировочный датасет.
+hackathon_income_test.csv — тестовый датасет.
+submission_ensemble.csv — результат предсказаний, поданный на платформу.
+
+Интерпретация модели (SHAP):
+shap_explainer.pkl — обученный SHAP-объект.
+shap_visualization.py — генерация визуализаций SHAP.
+shap_summary.png, shap_waterfall.png — примеры графиков важности признаков.
+
+Тестовый фронтенд:
+fastapi_app.py — backend API на FastAPI (обработка запросов, вызов модели).
+front.html — простая веб-страница для ввода параметров клиента и получения предсказания.
+
+Служебные директории:
+catboost_info/ — служебные файлы CatBoost.
+__pycache__/ — автоматически генерируемые Python-кэши.
+requirements.txt — список зависимостей проекта.
+
+Старт:
+1. Установка окружения
+pip install -r requirements.txt
+2. Обучение модели
+python train_model.py
+После выполнения появятся income_ensemble_model.pkl и preprocessor.pkl.
+3. Предсказание дохода
+python inference.py --input user_id_2.json
+4. Генерация сабмишена
+(если внутри inference есть батч-режим)
+python inference.py --csv hackathon_income_test.csv --out submission_ensemble.csv
+
+Веб-демо - вотч-дэмо(!): 
+Запуск API
+uvicorn frontend.fastapi_app:app --reload
+Использование
+Открыть в браузере:
+http://localhost:8000/front.html
+
+Интерпретация модели:
+Генерация SHAP-графиков:
+python shap_visualization.py
+Результаты сохраняются в PNG-файлы.
+Что я юзаю:
+Python
+CatBoost / LightGBM / NN Keras
+FastAPI для сервера
+SHAP для анализа признаков
+Pandas / NumPy для обработки данных
