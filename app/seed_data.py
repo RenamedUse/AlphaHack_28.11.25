@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from . import models
 
 # Кроссплатформенный путь (работает на Linux и Windows)
-FEATURES_DESCRIPTION_PATH = Path(__file__).parent.parent / "data" / "features_description.csv"
+# Ищет в app/data/features_description.csv
+FEATURES_DESCRIPTION_PATH = Path(__file__).parent / "data" / "features_description.csv"
 
 
 async def seed_segments(db: AsyncSession) -> None:
