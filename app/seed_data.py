@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import models
 
-# Кроссплатформенный путь (работает на Linux и Windows)
-# Ищет в app/data/features_description.csv
-FEATURES_DESCRIPTION_PATH = Path(__file__).parent / "data" / "features_description.csv"
+# базовая директория пакета app
+BASE_DIR = Path(__file__).resolve().parent.parent
+FEATURES_DESCRIPTION_PATH = BASE_DIR / "data" / "features_description.csv"
 
 
 async def seed_segments(db: AsyncSession) -> None:
@@ -115,9 +115,11 @@ async def seed_feature_definitions(db: AsyncSession) -> None:
     """Посеять FeatureDefinition из файла features_description.csv."""
     if not FEATURES_DESCRIPTION_PATH.exists():
         # Ничего страшного: просто не сидируем признаки
+        print(f"[seed] features file not found: {FEATURES_DESCRIPTION_PATH}")
         return
 
-    with open(FEATURES_DESCRIPTION_PATH, "r", encoding="utf-8", newline="") as f:
+    # файл из хакатона в cp1251
+    with open(FEATURES_DESCRIPTION_PATH, "r", encoding="cp1251", newline="") as f:
         sample = f.read(4096)
         f.seek(0)
         try:
