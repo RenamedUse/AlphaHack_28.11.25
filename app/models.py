@@ -1,8 +1,4 @@
-"""Определения ORM-моделей
-
-Модуль содержит SQLAlchemy ORM-модели, соответствующие схеме БД
-Все модели наследуются от базового класса ``Base`` из ``database.py``.
-"""
+"""Определения ORM-моделей"""
 
 from __future__ import annotations
 
@@ -21,9 +17,6 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 
-# Унифицированный тип для JSON-полей в БД:
-# - в PostgreSQL используем JSONB
-# - в других СУБД — обобщённый JSON SQLAlchemy
 try:
     from sqlalchemy.dialects.postgresql import JSONB
     JSONType = JSONB

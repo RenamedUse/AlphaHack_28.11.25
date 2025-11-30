@@ -1,4 +1,4 @@
-"""Административные маршруты (управление продуктами, сегментами, признаками и правилами)."""
+"""Административные маршруты (управление продуктами, сегментами, признаками и правилами)"""
 
 from __future__ import annotations
 
@@ -17,17 +17,14 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 @router.post("/seed/start")
 async def run_seeds(db: AsyncSession = Depends(get_db)) -> dict:
-    """Запустить сидирование сегментов, признаков, продуктов и правил.
-
-    Можно дернуть один раз после старта приложения или при развёртывании стенда.
-    Эндпоинт идемпотентный: повторный вызов не создаёт дубликатов.
-    """
+    """Запустить сидирование сегментов, признаков, продуктов и правил
+    из начальных данных"""
     await seed_initial_data(db)
     return {"status": "ok"}
 
 @router.get("/products", response_model=List[schemas.ProductResponse])
 async def list_products(db: AsyncSession = Depends(get_db)) -> List[schemas.ProductResponse]:
-    """Список всех продуктов."""
+    """Список всех продуктов"""
     result = await db.execute(select(models.Product))
     products = result.scalars().all()
     return [schemas.ProductResponse.model_validate(p) for p in products]
@@ -38,7 +35,7 @@ async def create_product(
     payload: schemas.ProductCreate,
     db: AsyncSession = Depends(get_db),
 ) -> schemas.ProductResponse:
-    """Создать новый продукт."""
+    """Создать новый продукт"""
     # Проверяем уникальность кода
     result = await db.execute(
         select(models.Product).where(models.Product.code == payload.code)
@@ -98,7 +95,7 @@ async def create_feature(
     payload: schemas.FeatureDefinitionCreate,
     db: AsyncSession = Depends(get_db),
 ) -> schemas.FeatureDefinitionResponse:
-    """Создать новое определение признака."""
+    """Создать новое определение признака"""
     # Проверка уникальности имени признака
     result = await db.execute(
         select(models.FeatureDefinition).where(
@@ -125,7 +122,7 @@ async def create_feature(
 async def list_segments(
     db: AsyncSession = Depends(get_db),
 ) -> List[schemas.SegmentResponse]:
-    """Список всех сегментов клиентов."""
+    """Список всех сегментов клиентов"""
     result = await db.execute(select(models.Segment).order_by(models.Segment.sort_order))
     segments = result.scalars().all()
     return [schemas.SegmentResponse.model_validate(s) for s in segments]
@@ -136,7 +133,7 @@ async def create_segment(
     payload: schemas.SegmentCreate,
     db: AsyncSession = Depends(get_db),
 ) -> schemas.SegmentResponse:
-    """Создать новый сегмент клиентов."""
+    """Создать новый сегмент клиентов"""
     # Проверка уникальности кода сегмента
     result = await db.execute(
         select(models.Segment).where(models.Segment.code == payload.code)
@@ -167,12 +164,11 @@ async def get_product_segments(
     product_id: int,
     db: AsyncSession = Depends(get_db),
 ) -> List[schemas.SegmentResponse]:
-    """Получить список сегментов, привязанных к продукту."""
+    """Получить список сегментов, привязанных к продукту"""
     product = await db.get(models.Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # Явно выбираем сегменты через JOIN, без ленивой загрузки отношений
     result = await db.execute(
         select(models.Segment)
         .join(
@@ -196,7 +192,7 @@ async def update_product_segments(
     payload: schemas.ProductSegmentUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> List[schemas.SegmentResponse]:
-    """Обновить список сегментов, к которым привязан продукт."""
+    """Обновить список сегментов, к которым привязан продукт"""
     product = await db.get(models.Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -234,7 +230,7 @@ async def get_product_rules(
     product_id: int,
     db: AsyncSession = Depends(get_db),
 ) -> List[schemas.ProductRuleResponse]:
-    """Получить список правил отбора клиентов для продукта."""
+    """Получить список правил отбора клиентов для продукта"""
     product = await db.get(models.Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -267,7 +263,7 @@ async def add_product_rule(
     payload: schemas.ProductRuleCreate,
     db: AsyncSession = Depends(get_db),
 ) -> schemas.ProductRuleResponse:
-    """Добавить новое правило отбора клиентов для продукта."""
+    """Добавить новое правило отбора клиентов для продукта"""
     product = await db.get(models.Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")

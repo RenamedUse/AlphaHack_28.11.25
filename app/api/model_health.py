@@ -17,7 +17,6 @@ async def model_health(db: AsyncSession = Depends(get_db)):
     now = dt.datetime.utcnow()
     since = now - dt.timedelta(hours=24)
 
-    # --- модель ---
     try:
         model, feature_names = _load_model_and_preprocessor()
         model_loaded = True
@@ -26,7 +25,6 @@ async def model_health(db: AsyncSession = Depends(get_db)):
         model_loaded = False
         features_count = None
 
-    # --- prediction_log: трафик / симуляции / источники ---
     PL = models.PredictionLog
 
     agg = (
@@ -71,7 +69,6 @@ async def model_health(db: AsyncSession = Depends(get_db)):
         {"request_source": r[0], "count": r[1]} for r in top_request_sources
     ]
 
-    # --- ошибки: используем ImportJob как источник ошибок ---
     IJ = models.ImportJob
 
     jobs_agg = (
@@ -101,7 +98,6 @@ async def model_health(db: AsyncSession = Depends(get_db)):
         {"error": r[0], "count": r[1]} for r in jobs_errors_rows
     ]
 
-    # --- client_state / clients ---
     CS = models.Client
 
     total_clients = (

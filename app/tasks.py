@@ -1,11 +1,6 @@
-"""Фоновые задачи для долгих операций.
-
-Модуль содержит асинхронные функции, которые могут выполняться в фоне,
-например через BackgroundTasks FastAPI.
-
-Основные задачи:
-- обработка импорта CSV построчно,
-- вычисление рекомендаций по продуктам для клиента.
+"""
+- обработка импорта CSV построчно
+- вычисление рекомендаций по продуктам для клиента
 """
 
 from __future__ import annotations
@@ -17,7 +12,7 @@ from typing import Dict, Any, List
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload  # может не использоваться, но полезен
+from sqlalchemy.orm import selectinload
 
 from .database import SessionLocal
 from . import models
@@ -30,7 +25,7 @@ async def compute_recommendations(
     income_pred: float,
     features: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
-    """Вычислить динамические рекомендации продуктов для клиента.
+    """Вычислить динамические рекомендации продуктов для клиента
 
     Логика:
     1. Определяем сегмент клиента по его предсказанному доходу.
@@ -38,18 +33,13 @@ async def compute_recommendations(
        дополнительным порогам min_income/max_income продукта.
     3. Для каждого продукта проверяем набор правил по признакам клиента.
     4. Возвращаем список подходящих продуктов с текстовым объяснением причины.
-
-    :param db: Активная сессия БД.
-    :param income_pred: Предсказанный доход клиента.
-    :param features: Нормализованный словарь признаков клиента.
-    :return: Список словарей: code, name, description, reason.
     """
     # Определяем сегмент по доходу
     segment_row = await db.execute(
         select(models.Segment)
         .where(
             models.Segment.min_income <= income_pred,
-            (models.Segment.max_income == None)  # noqa: E711
+            (models.Segment.max_income == None)
             | (income_pred < models.Segment.max_income),
         )
         .order_by(models.Segment.sort_order)
@@ -65,9 +55,9 @@ async def compute_recommendations(
         .where(
             models.Product.active.is_(True),
             models.ProductSegment.segment_id == segment.id,
-            (models.Product.min_income == None)  # noqa: E711
+            (models.Product.min_income == None)
             | (income_pred >= models.Product.min_income),
-            (models.Product.max_income == None)  # noqa: E711
+            (models.Product.max_income == None)
             | (income_pred <= models.Product.max_income),
         )
     )
@@ -166,11 +156,11 @@ async def compute_recommendations(
             )
 
     # На всякий случай прогоняем через санитайзер перед сохранением в JSONB
-    return sanitize_for_json(recommendations)  # type: ignore[return-value]
+    return sanitize_for_json(recommendations)
 
 
 async def process_import_job(job_id: int) -> None:
-    """Обработать задачу импорта CSV в фоне.
+    """Обработать задачу импорта CSV в фоне
 
     Шаги:
     1. Загружаем запись ImportJob по ID
@@ -208,18 +198,15 @@ async def process_import_job(job_id: int) -> None:
         model = IncomeModel()
 
         try:
-            # Read all rows synchronously first, outside of async context
             with open(file_path, "r", encoding="utf-8") as csvfile:
                 reader = csv.DictReader(csvfile, delimiter=";")
                 rows = list(reader)
 
-            # Now process rows asynchronously
             for row in rows:
-                # Идентификатор клиента берём из external_id или client_id
                 external_id = (
                     row.pop("external_id", None)
                     or row.pop("client_id", None)
-                    or row.pop("id", None)  # <-- забираем id и не пускаем его в features
+                    or row.pop("id", None)
                 )
                 if not external_id:
                     job.processed_rows = (job.processed_rows or 0) + 1

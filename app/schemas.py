@@ -1,8 +1,4 @@
-"""Pydantic-схемы для запросов и ответов API
-
-Схемы описывают структуры данных, которые приходят/возвращаются через HTTP
-Также они используются для генерации документации в FastAPI
-"""
+"""Pydantic-схемы для запросов и ответов API"""
 
 from __future__ import annotations
 
@@ -13,12 +9,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 
 class ORMModel(BaseModel):
-    """Базовая модель для всех схем.
-
-    - from_attributes=True — позволяет создавать схемы напрямую из ORM-объектов.
-    - protected_namespaces=() — отключаем защиту для имён, начинающихся с 'model_' и т.п.,
-      чтобы можно было спокойно использовать поле model_version.
-    """
+    """Базовая модель для всех схем"""
 
     model_config = ConfigDict(
         from_attributes=True,

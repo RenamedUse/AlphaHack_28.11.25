@@ -15,8 +15,8 @@ log = logging.getLogger(__name__)
 
 def _get_app_root() -> Path:
     """
-    Найти корень пакета `app` (директорию, где лежат data/, ml/, database.py).
-    Работает независимо от того, где лежит этот модуль (app/api, app/services и т.п.).
+    Найти корень пакета `app` (директорию, где лежат data/, ml/, database.py)
+    Работает независимо от того, где лежит этот модуль (app/api, app/services и т.п.)
     """
     current = Path(__file__).resolve()
     # Идём вверх по дереву, пока не найдём директорию с именем "app"
@@ -89,7 +89,7 @@ async def seed_segments(db: AsyncSession) -> None:
 
 
 def _detect_feature_columns(fieldnames: List[str]) -> Dict[str, Optional[str]]:
-    """Определить, какие столбцы в CSV соответствуют имени/описанию/типу."""
+    """Определить, какие столбцы в CSV соответствуют имени/описанию/типу"""
     lower = [f.lower() for f in fieldnames]
 
     def find(*candidates: str) -> Optional[str]:
@@ -108,7 +108,7 @@ def _detect_feature_columns(fieldnames: List[str]) -> Dict[str, Optional[str]]:
 
 
 def _infer_data_type(name: str, raw_type: Optional[str]) -> str:
-    """Определить data_type ('numeric' или 'string') для FeatureDefinition."""
+    """Определить data_type ('numeric' или 'string') для FeatureDefinition"""
     if raw_type:
         t = raw_type.strip().lower()
         if any(x in t for x in ("int", "float", "double", "numeric", "num")):
@@ -122,7 +122,6 @@ def _infer_data_type(name: str, raw_type: Optional[str]) -> str:
     if n.endswith("_flg") or n.startswith("flg_"):
         return "numeric"
 
-    # По умолчанию считаем числом, так как у нас скоринговый датасет
     return "numeric"
 
 
@@ -137,7 +136,6 @@ async def seed_feature_definitions(db: AsyncSession) -> None:
     inserted = 0
 
     try:
-        # оригинальный файл из хакатона в cp1251
         with FEATURES_DESCRIPTION_PATH.open("r", encoding="cp1251", newline="") as f:
             sample = f.read(4096)
             f.seek(0)
@@ -219,7 +217,7 @@ async def _ensure_feature(
 ) -> models.FeatureDefinition:
     """
     Гарантированно вернуть FeatureDefinition:
-    если нет в БД (CSV не сиднулся) — создать на лету.
+    если нет в БД (CSV не сиднулся) — создать на лету
     """
     feat = await _get_feature_by_name(db, name)
     if feat:
@@ -351,7 +349,7 @@ async def seed_products_and_rules(db: AsyncSession) -> None:
 
 
 async def seed_initial_data(db: AsyncSession) -> None:
-    """Запустить полный набор сидов: сегменты, признаки, продукты и правила."""
+    """Запустить полный набор сидов: сегменты, признаки, продукты и правила"""
     await seed_segments(db)
     await seed_feature_definitions(db)
     await seed_products_and_rules(db)

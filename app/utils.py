@@ -7,7 +7,7 @@ from typing import Dict, Any
 
 
 def canonicalize_features(raw: Dict[str, Any]) -> Dict[str, Any]:
-    """Нормализовать словарь признаков.
+    """Нормализовать словарь признаков
 
     Логика:
     - значения ``None`` и пустые строки отбрасываются
@@ -55,7 +55,7 @@ def canonicalize_features(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def sanitize_for_json(value: Any) -> Any:
-    """Рекурсивно заменяет NaN/Infinity на None, чтобы JSON был валидным для PostgreSQL."""
+    """Рекурсивно заменяет NaN/Infinity на None, чтобы JSON был валидным для PostgreSQL"""
     # Числа с NaN/Inf
     if isinstance(value, float):
         if math.isnan(value) or math.isinf(value):
@@ -75,10 +75,7 @@ def sanitize_for_json(value: Any) -> Any:
 
 
 def compute_features_hash(features: Dict[str, Any]) -> str:
-    """Посчитать детерминированный хэш для словаря признаков.
-
-    Предполагается, что features уже прошли через sanitize_for_json.
-    """
+    """Посчитать детерминированный хэш для словаря признаков"""
     payload = json.dumps(features, sort_keys=True, ensure_ascii=False)
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return digest

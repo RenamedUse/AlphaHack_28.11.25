@@ -50,8 +50,8 @@ async def import_income_csv(
     """Загрузить CSV с клиентами и поставить его в очередь на фоновую обработку
 
     Требования к CSV:
-    - должна быть колонка ``external_id`` (или аналогичная), которая идентифицирует клиента;
-    - все остальные колонки воспринимаются как признаки.
+    - должна быть колонка ``id`` (или аналогичная), которая идентифицирует клиента
+    - все остальные колонки воспринимаются как признаки 
     """
     imports_path = os.environ.get("IMPORTS_PATH", "/tmp/imports")
     os.makedirs(imports_path, exist_ok=True)
@@ -76,7 +76,6 @@ async def import_income_csv(
     await db.flush()
     await db.commit()
 
-    # Schedule the async task using asyncio.create_task which preserves the event loop
     asyncio.create_task(process_import_job(job.id))
 
     return schemas.ImportJobResponse.model_validate(job)
@@ -87,7 +86,7 @@ async def get_import_job(
     job_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
 ) -> schemas.ImportJobResponse:
-    """Получить статус и прогресс конкретной задачи импорта CSV."""
+    """Получить статус и прогресс конкретной задачи импорта CSV"""
     job = await db.get(models.ImportJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Import job not found")
@@ -112,7 +111,7 @@ async def list_clients(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> List[schemas.ClientSummary]:
-    """Вернуть постраничный список клиентов с фильтрами по сегменту и доходу."""
+    """Вернуть постраничный список клиентов с фильтрами по сегменту и доходу"""
     from sqlalchemy.orm import aliased
 
     seg_alias = aliased(models.Segment)
@@ -172,8 +171,7 @@ async def get_client_card(
     external_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> schemas.CardResponse:
-    """Карточка клиента: прогноз дохода, сегмент, объяснение и рекомендованные продукты."""
-    # Ищем клиента по external_id и сразу подгружаем state, чтобы не было ленивой загрузки
+    """Карточка клиента: прогноз дохода, сегмент, интерпретация и рекомендованные продукты"""
     result = await db.execute(
         select(models.Client)
         .options(selectinload(models.Client.state))
@@ -279,12 +277,12 @@ async def simulate(
     payload: schemas.SimulationRequest,
     db: AsyncSession = Depends(get_db),
 ) -> schemas.SimulationResponse:
-    """Симуляция: подставить альтернативные признаки и посмотреть результат.
+    """Симуляция: подставить альтернативные признаки и посмотреть результат
 
     Поведение:
-    - если передан ``external_id``, берём текущие признаки клиента как базу
+    - если передан ``id``, берём текущие признаки клиента как базу
       и поверх накладываем ``features_override``;
-    - если ``external_id`` не передан, используем только ``features_override``.
+    - если ``id`` не передан, используем только ``features_override``.
 
     Результат:
     - новый прогноз дохода,

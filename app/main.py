@@ -1,9 +1,3 @@
-"""Точка входа FastAPI-приложения.
-
-Здесь создаётся объект приложения, настраивается хук старта и
-подключаются роутеры (публичные и административные).
-"""
-
 from __future__ import annotations
 
 import os
@@ -20,17 +14,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],   # если нужно ограничить: ["GET", "POST", ...]
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    """Инициализация БД и служебных каталогов при старте приложения."""
-    # Создаём таблицы, если их ещё нет
+    """Инициализация БД и служебных каталогов при старте приложения"""
     await create_tables()
-
-    # Гарантируем наличие каталога для импортируемых CSV
     imports_path = os.environ.get("IMPORTS_PATH", "/tmp/imports")
     os.makedirs(imports_path, exist_ok=True)
 
