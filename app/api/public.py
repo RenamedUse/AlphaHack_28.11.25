@@ -29,6 +29,7 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.ml.model import IncomeModel
 
@@ -172,9 +173,11 @@ async def get_client_card(
     db: AsyncSession = Depends(get_db),
 ) -> schemas.CardResponse:
     """Карточка клиента: прогноз дохода, сегмент, объяснение и рекомендованные продукты."""
-    # Ищем клиента по external_id
+    # Ищем клиента по external_id и сразу подгружаем state, чтобы не было ленивой загрузки
     result = await db.execute(
-        select(models.Client).where(models.Client.external_id == external_id)
+        select(models.Client)
+        .options(selectinload(models.Client.state))
+        .where(models.Client.external_id == external_id)
     )
     client: models.Client | None = result.scalars().first()
     if not client:
