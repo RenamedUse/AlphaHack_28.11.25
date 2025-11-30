@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
 from .. import models
-from ..ml import _load_model_and_preprocessor
+from ..ml.model import _load_model_and_preprocessor
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 
