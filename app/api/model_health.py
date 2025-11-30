@@ -17,6 +17,7 @@ async def model_health(db: AsyncSession = Depends(get_db)):
     now = dt.datetime.utcnow()
     since = now - dt.timedelta(hours=24)
 
+    # --- модель ---
     try:
         model, feature_names = _load_model_and_preprocessor()
         model_loaded = True
@@ -25,9 +26,9 @@ async def model_health(db: AsyncSession = Depends(get_db)):
         model_loaded = False
         features_count = None
 
+    # --- prediction_log: трафик / симуляции / источники ---
     PL = models.PredictionLog
 
-    # Агрегация по доступным полям: общее число, число симуляций, число уникальных клиентов
     agg = (
         await db.execute(
             select(
@@ -42,11 +43,9 @@ async def model_health(db: AsyncSession = Depends(get_db)):
     simulations = int(agg[1] or 0)
     unique_clients = int(agg[2] or 0)
 
-    # latency / errors metrics are not available in current schema
     avg_latency = None
     p95_latency = None
 
-    # версии
     versions = (
         await db.execute(
             select(PL.model_version, func.count())
@@ -55,12 +54,10 @@ async def model_health(db: AsyncSession = Depends(get_db)):
             .order_by(desc(func.count()))
         )
     ).all()
-
     versions_usage = [
         {"model_version": v[0], "count": v[1]} for v in versions
     ]
 
-    # Топ источников запросов (так как в схеме нет error_code)
     top_request_sources = (
         await db.execute(
             select(PL.request_source, func.count())
@@ -70,30 +67,58 @@ async def model_health(db: AsyncSession = Depends(get_db)):
             .limit(5)
         )
     ).all()
+    top_request_sources = [
+        {"request_source": r[0], "count": r[1]} for r in top_request_sources
+    ]
 
-    top_request_sources = [{"request_source": r[0], "count": r[1]} for r in top_request_sources]
+    # --- ошибки: используем ImportJob как источник ошибок ---
+    IJ = models.ImportJob
 
-    # --- client_state ---
-    CS = models.ClientState
+    jobs_agg = (
+        await db.execute(
+            select(
+                func.count(IJ.id),
+                func.sum(
+                    case((IJ.status == "failed", 1), else_=0)
+                ),
+            ).where(IJ.created_at >= since)
+        )
+    ).one()
 
-    # Клиенты: общее число клиентов и число активных за 24ч (по updated_at в ClientState)
+    import_jobs_total = int(jobs_agg[0] or 0)
+    import_jobs_failed = int(jobs_agg[1] or 0)
+
+    jobs_errors_rows = (
+        await db.execute(
+            select(IJ.error, func.count())
+            .where(IJ.created_at >= since, IJ.error.is_not(None))
+            .group_by(IJ.error)
+            .order_by(desc(func.count()))
+            .limit(5)
+        )
+    ).all()
+    top_import_errors = [
+        {"error": r[0], "count": r[1]} for r in jobs_errors_rows
+    ]
+
+    # --- client_state / clients ---
+    CS = models.Client
+
     total_clients = (
         await db.execute(select(func.count()).select_from(models.Client))
     ).scalar_one()
 
     recent_clients = (
         await db.execute(
-            select(func.count()).select_from(CS).where(CS.updated_at >= since)
+            select(func.count()).select_from(models.ClientState).where(
+                models.ClientState.updated_at >= since
+            )
         )
     ).scalar_one()
 
-    # Сегменты в явном виде в ClientState не хранятся (есть поле features JSON).
-    # Извлечение распределения сегментов требует специфичных JSON-операций и зависит
-    # от СУБД. Пока возвращаем пустой список и флаг о недоступности.
     segments_dist = []
     segments_available = False
 
-    # Результат
     return {
         "model": {
             "loaded": model_loaded,
@@ -107,6 +132,11 @@ async def model_health(db: AsyncSession = Depends(get_db)):
             "p95_latency": p95_latency,
             "versions": versions_usage,
             "top_request_sources": top_request_sources,
+        },
+        "errors_24h": {
+            "import_jobs_total": import_jobs_total,
+            "import_jobs_failed": import_jobs_failed,
+            "top_import_errors": top_import_errors,
         },
         "clients": {
             "total": total_clients,
