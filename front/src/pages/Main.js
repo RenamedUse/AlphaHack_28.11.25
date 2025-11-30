@@ -11,12 +11,11 @@ function Main() {
   const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
-  const [filters, setFilters] = useState({
-    segment_code: '',
-    min_income: '',
-    max_income: ''
-  });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
 
   // Функция для получения перевода названия фичи
   const getFeatureTitle = (featureName) => {
@@ -27,10 +26,7 @@ function Main() {
   const translateExplanationText = (text) => {
     if (!text) return text;
     
-    // Ищем в тексте названия фич в скобках и заменяем их
     let translatedText = text;
-    
-    // Регулярное выражение для поиска фич в формате: featureName (значение)
     const featureRegex = /(\w+)\s*\(([^)]+)\)/g;
     
     translatedText = translatedText.replace(featureRegex, (match, featureName, value) => {
@@ -38,7 +34,6 @@ function Main() {
       return `${translatedFeature} (${value})`;
     });
     
-    // Дополнительно ищем фичи без значений (только названия)
     Object.keys(FEATURES_TRANSLATIONS).forEach(featureName => {
       const regex = new RegExp(`\\b${featureName}\\b`, 'g');
       translatedText = translatedText.replace(regex, FEATURES_TRANSLATIONS[featureName]);
@@ -47,30 +42,59 @@ function Main() {
     return translatedText;
   };
 
-  // Функция загрузки клиентов с useCallback
-  const loadClients = useCallback(async () => {
-    setLoading(true);
+  // Функция загрузки клиентов
+  const loadClients = useCallback(async (reset = false) => {
+    if (reset) {
+      setOffset(0);
+      setHasMore(true);
+    }
+
+    const currentOffset = reset ? 0 : offset;
+    
+    if (currentOffset === 0) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
+    
     setError(null);
     try {
-      const data = await api.getClients(filters);
-      setClients(data);
+      const data = await api.getClients({
+        offset: currentOffset,
+        limit: 50
+      });
       
-      // Если есть клиенты, автоматически выбираем первого
-      if (data.length > 0 && !selectedClient) {
-        handleClientSelect(data[0]);
+      if (reset || currentOffset === 0) {
+        setClients(data);
+        // Автоматически выбираем первого клиента при первой загрузке
+        if (data.length > 0 && !selectedClient && reset) {
+          handleClientSelect(data[0]);
+        }
+      } else {
+        setClients(prev => [...prev, ...data]);
+      }
+      
+      // Если получено меньше клиентов, чем лимит, значит это последняя страница
+      if (data.length < 50) {
+        setHasMore(false);
+      }
+      
+      if (!reset) {
+        setOffset(currentOffset + data.length);
       }
     } catch (err) {
       setError('Ошибка загрузки клиентов: ' + err.message);
       console.error('Ошибка загрузки клиентов:', err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, [filters, selectedClient]);
+  }, [offset, selectedClient]);
 
-  // Загрузка клиентов при монтировании и изменении фильтров
+  // Загрузка клиентов при монтировании
   useEffect(() => {
-    loadClients();
-  }, [loadClients]);
+    loadClients(true);
+  }, []);
 
   // Функция выбора клиента
   const handleClientSelect = async (client) => {
@@ -80,13 +104,12 @@ function Main() {
       const cardData = await api.getClientCard(client.external_id);
       
       // Упорядочиваем top_features по убыванию абсолютного значения shap_value
-      // И заменяем названия фич на человеческие
       if (cardData.explanation && cardData.explanation.top_features) {
         cardData.explanation.top_features = cardData.explanation.top_features
           .sort((a, b) => Math.abs(b.shap_value) - Math.abs(a.shap_value))
           .map(feature => ({
             ...feature,
-            title: getFeatureTitle(feature.title) // Заменяем название
+            title: getFeatureTitle(feature.title)
           }));
       }
       
@@ -104,7 +127,7 @@ function Main() {
     }
   };
 
-  // Остальной код без изменений...
+  // Функция обработки загрузки файла
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -123,6 +146,7 @@ function Main() {
     }
   };
 
+  // Функция опроса статуса импорта
   const pollImportStatus = async (jobId) => {
     const interval = setInterval(async () => {
       try {
@@ -131,7 +155,8 @@ function Main() {
         if (status.status === 'completed' || status.status === 'failed') {
           clearInterval(interval);
           if (status.status === 'completed') {
-            loadClients();
+            // Перезагружаем список после импорта
+            loadClients(true);
           }
           setLoading(false);
         }
@@ -143,9 +168,26 @@ function Main() {
     }, 2000);
   };
 
-  const applyFilters = (newFilters) => {
-    setFilters(newFilters);
+  // Функция обработки скролла для бесконечной подгрузки
+  const handleScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    
+    // Если прокрутили до конца и есть еще данные для загрузки
+    if (scrollHeight - scrollTop <= clientHeight + 100 && hasMore && !loadingMore) {
+      loadClients();
+    }
   };
+
+  // Функция поиска клиентов
+  const handleSearch = (query) => {
+    setSearchQuery(query);
+  };
+
+  // Фильтрация клиентов по поисковому запросу
+  const filteredClients = clients.filter(client => 
+    client.external_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (client.display_name && client.display_name.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   return (
     <div className='page main-page'>
@@ -153,9 +195,10 @@ function Main() {
       <div className='header'>
         <input 
           type="text" 
-          placeholder="Поиск клиентов..."
+          placeholder="Поиск по ID или имени..."
           className='search-input'
-          onChange={(e) => applyFilters({...filters, search: e.target.value})}
+          value={searchQuery}
+          onChange={(e) => handleSearch(e.target.value)}
         />
         <div className='buttons-container'>
             <label className='upload-btn'>
@@ -182,16 +225,18 @@ function Main() {
         <div className='user-list'>
           <div className='user-list-header'>
             <h3>Клиенты</h3>
-            {loading && <span>Загрузка...</span>}
           </div>
-          <div className='users-container'>
+          <div 
+            className='users-container'
+            onScroll={handleScroll}
+          >
             {error && (
-              <div className="error-message" style={{color: '#ef3124', padding: '10px', textAlign: 'center'}}>
+              <div className="error-message">
                 {error}
               </div>
             )}
             
-            {clients.map(client => (
+            {filteredClients.map(client => (
               <div
                 key={client.external_id}
                 className={`user-item ${selectedClient && selectedClient.client.external_id === client.external_id ? 'active' : ''}`}
@@ -204,9 +249,15 @@ function Main() {
               </div>
             ))}
             
-            {clients.length === 0 && !loading && (
-              <div style={{textAlign: 'center', padding: '20px', color: '#666'}}>
+            {filteredClients.length === 0 && !loading && (
+              <div className="no-clients">
                 Клиенты не найдены
+              </div>
+            )}
+            
+            {loadingMore && (
+              <div className="loading-more">
+                Загрузка...
               </div>
             )}
           </div>
@@ -220,27 +271,8 @@ function Main() {
             {/* Карточка с основной информацией о клиенте */}
             {selectedClient && (
               <>
-                <div className='main-info-card'>
-                  <div className='card-header'>
-                    <h3>{selectedClient.client.display_name || selectedClient.client.external_id}</h3>
-                  </div>
-                  <div className='card-content'>
-                    <div className='income-section'>
-                      <div className='income-amount'>{selectedClient.prediction.income_pred.toLocaleString()} ₽</div>
-                      <div className={`income-segment ${selectedClient.prediction.segment_code}`}>
-                        {selectedClient.prediction.segment_name}
-                      </div>
-                    </div>
-                    <div className='client-meta'>
-                      <p><strong>ID:</strong> {selectedClient.client.external_id}</p>
-                      <p><strong>Модель:</strong> {selectedClient.prediction.model_version}</p>
-                      <p><strong>Обновлено:</strong> {new Date(selectedClient.prediction.updated_at).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Карточка с объяснением предсказания */}
-                <div className='main-info-card card-w'>
+                <div className='main-info-card card-uw'>
                   <div className='card-header'>
                     <h4>Объяснение предсказания</h4>
                   </div>
@@ -262,7 +294,7 @@ function Main() {
                 </div>
 
                 {/* Карточка с рекомендованными продуктами */}
-                <div className='main-info-card card-w'>
+                <div className='main-info-card card-uw'>
                   <div className='card-header'>
                     <h4>Рекомендуемые продукты</h4>
                   </div>
@@ -284,14 +316,6 @@ function Main() {
               <div className='main-info-card card-uw' style={{textAlign: 'center', padding: '40px'}}>
                 <h3>Выберите клиента из списка</h3>
                 <p>Для просмотра детальной информации выберите клиента из списка слева</p>
-              </div>
-            )}
-
-            {/* Состояние загрузки */}
-            {loading && (
-              <div className='main-info-card card-uw' style={{textAlign: 'center', padding: '40px'}}>
-                <h3>Загрузка...</h3>
-                <p>Пожалуйста, подождите</p>
               </div>
             )}
           </div>
